@@ -106,6 +106,9 @@
   .loading-overlay.show{display:flex}
   .spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite;margin-right:10px}
   @keyframes spin{to{transform:rotate(360deg)}}
+  .config-item{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:6px;font-size:13px;background:var(--bg)}
+  .config-item button{background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;padding:0 4px;line-height:1}
+  .config-item button:hover{color:#991b1b}
   /* Lightbox */
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:300;opacity:0;pointer-events:none;transition:opacity .2s}
   .lightbox.show{opacity:1;pointer-events:all}
@@ -140,6 +143,7 @@
   <button class="nav-tab active" onclick="showTab('form')">＋ Nueva solicitud</button>
   <button class="nav-tab" onclick="showTab('list')">☰ Solicitudes</button>
   <button class="nav-tab" onclick="showTab('dash')">▦ Tablero</button>
+  <button class="nav-tab" id="tab-config-btn" onclick="showTab('config')" style="display:none">⚙️ Configuración</button>
 </nav>
 
 <div class="main">
@@ -232,6 +236,34 @@
       <div class="chart-section" style="grid-column:1/-1"><div class="chart-title">Demora promedio por sucursal (días)</div><div id="chart-demora"></div></div>
     </div>
   </div>
+
+  <!-- CONFIGURACION -->
+  <div id="tab-config" class="panel">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      
+      <!-- SUCURSALES -->
+      <div class="card">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:1rem">Sucursales</h3>
+        <div id="config-suc-list" style="margin-bottom:1rem"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="new-suc" placeholder="Nueva sucursal..." style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:'DM Sans',sans-serif;background:var(--bg)">
+          <button class="btn btn-primary" onclick="agregarItem('suc')" style="padding:8px 14px;font-size:13px">+ Agregar</button>
+        </div>
+      </div>
+
+      <!-- SECTORES -->
+      <div class="card">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:1rem">Sectores</h3>
+        <div id="config-sec-list" style="margin-bottom:1rem"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="new-sec" placeholder="Nuevo sector..." style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:'DM Sans',sans-serif;background:var(--bg)">
+          <button class="btn btn-primary" onclick="agregarItem('sec')" style="padding:8px 14px;font-size:13px">+ Agregar</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -288,6 +320,8 @@ function updateAdminBadge(){
   document.getElementById('admin-icon').textContent=isAdmin?'🔓':'🔒';
   document.getElementById('admin-label').textContent=isAdmin?'Admin activo':'Admin';
   document.getElementById('admin-badge').classList.toggle('active',isAdmin);
+  document.getElementById('tab-config-btn').style.display=isAdmin?'block':'none';
+  if(!isAdmin&&document.getElementById('tab-config').classList.contains('active'))showTab('form');
 }
 
 function setSyncState(s){
@@ -300,11 +334,12 @@ function toast(msg,dur=2400){
   setTimeout(()=>el.classList.remove('show'),dur);
 }
 function showTab(t){
-  document.querySelectorAll('.nav-tab').forEach((b,i)=>b.classList.toggle('active',['form','list','dash'][i]===t));
+  document.querySelectorAll('.nav-tab').forEach((b,i)=>b.classList.toggle('active',['form','list','dash','config'][i]===t));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
   if(t==='list')loadData().then(renderList);
   if(t==='dash')loadData().then(renderDash);
+  if(t==='config')loadConfig();
 }
 
 async function loadData(){
@@ -522,6 +557,84 @@ function renderDash(){
 }
 
 document.getElementById('f-fecha').value=new Date().toISOString().slice(0,10);
+
+// CONFIG - load sucursales and sectores from Sheet Config tab
+let configSuc=[], configSec=[];
+
+async function loadConfig(){
+  try{
+    const res=await fetch(API+'?sheet=Config');
+    const data=await res.json();
+    configSuc=data.sucursales||[];
+    configSec=data.sectores||[];
+    renderConfig();
+  }catch(e){toast('Error al cargar configuración');}
+}
+
+function renderConfig(){
+  const sucList=document.getElementById('config-suc-list');
+  const secList=document.getElementById('config-sec-list');
+  sucList.innerHTML=configSuc.map((s,i)=>`
+    <div class="config-item">
+      <span>${s}</span>
+      <button onclick="eliminarItem('suc',${i})" title="Eliminar">✕</button>
+    </div>`).join('') || '<div style="color:var(--text-muted);font-size:13px">Sin sucursales configuradas</div>';
+  secList.innerHTML=configSec.map((s,i)=>`
+    <div class="config-item">
+      <span>${s}</span>
+      <button onclick="eliminarItem('sec',${i})" title="Eliminar">✕</button>
+    </div>`).join('') || '<div style="color:var(--text-muted);font-size:13px">Sin sectores configurados</div>';
+  // Update selects in form
+  updateSelects();
+}
+
+function updateSelects(){
+  const sucSel=document.getElementById('f-suc');
+  const secSel=document.getElementById('f-sec');
+  const flSuc=document.getElementById('fl-suc');
+  const flSec=document.getElementById('fl-sec');
+  if(configSuc.length){
+    const sucOpts='<option value="">Seleccionar...</option>'+configSuc.map(s=>`<option>${s}</option>`).join('');
+    sucSel.innerHTML=sucOpts;
+    flSuc.innerHTML='<option value="">Todas las sucursales</option>'+configSuc.map(s=>`<option>${s}</option>`).join('');
+  }
+  if(configSec.length){
+    const secOpts='<option value="">Seleccionar...</option>'+configSec.map(s=>`<option>${s}</option>`).join('');
+    secSel.innerHTML=secOpts;
+    flSec.innerHTML='<option value="">Todos los sectores</option>'+configSec.map(s=>`<option>${s}</option>`).join('');
+  }
+}
+
+async function agregarItem(type){
+  const input=document.getElementById('new-'+type);
+  const val=input.value.trim().toUpperCase();
+  if(!val)return;
+  if(type==='suc')configSuc.push(val);
+  else configSec.push(val);
+  input.value='';
+  renderConfig();
+  await saveConfig();
+  toast('✓ '+val+' agregado');
+}
+
+async function eliminarItem(type,idx){
+  if(type==='suc')configSuc.splice(idx,1);
+  else configSec.splice(idx,1);
+  renderConfig();
+  await saveConfig();
+  toast('Elemento eliminado');
+}
+
+async function saveConfig(){
+  try{
+    await fetch(API,{method:'POST',redirect:'follow',body:JSON.stringify({
+      action:'saveConfig',sucursales:configSuc,sectores:configSec
+    })});
+  }catch(e){toast('Error al guardar configuración');}
+}
+
+// Load config on init
+loadConfig();
 </script>
 </body>
 </html>
